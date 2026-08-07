@@ -1,24 +1,25 @@
 {{/*
 ================================================
- YAGPDB Advanced Daily Roles
+ GameCentral Daily System
+ Version: 1.0.0
 
- Version: 1.1.0
+ Author: Ethelior
+ Project: GameCentral
 
- Created by: Ethelior
-
- Description:
- Advanced daily reward system for YAGPDB
- with rarity tiers, pity mechanics,
- daily streaks and troll events.
+ Features
+ ✔ Daily Roles
+ ✔ Cooldown
+ ✔ Rarity System
+ ✔ Troll Event
+ ✔ Daily Streak
+ ✔ Pity System
+ ✔ Weekend Bonus
+ ✔ Future Ready
 
  License:
- MIT License
-
- Repository:
- https://github.com/Ethelior/yagpdb-advanced-daily-roles
+ MIT
 ================================================
 */}}
-
 
 {{/* ======================================
                 CONFIG
@@ -28,7 +29,6 @@
     "cooldownKey" "gc_daily_cooldown"
     "pityKey" "gc_daily_pity"
     "streakKey" "gc_daily_streak"
-    "lastRoleKey" "gc_last_daily_role"
 
     "cooldown" 86400
 
@@ -36,18 +36,23 @@
     "rareChance" 88
     "epicChance" 98
 
-    "trollChance" 12
+    "trollChance" 5
+
     "weekendBonus" 5
     "maxPityBonus" 5
+
     "successColor" 3447003
     "cooldownColor" 16753920
     "trollColor" 15158332
+    "legendaryColor" 15844367
+
     "footerText" "GameCentral Daily System"
-    "titleReward" "🎁 GameCentral Daily Role"
+
+    "titleReward" "🎁 Daily Reward"
     "titleCooldown" "⏳ Daily Cooldown"
     "titleTroll" "💀 Daily Troll"
+    "titleLegendary" "🌟 LEGENDARY DROP!"
 }}
-
 
 {{/* ======================================
             TROLL MESSAGES
@@ -55,64 +60,24 @@
 
 {{$trollMessages := cslice
 "💀 Ο διανομέας των Daily Roles πήγε για καφέ. Ξαναπέρασε αύριο."
-"🎁 Άνοιξες το κουτί... ήταν άδειο."
+"🎁 Άνοιξες το κουτί... αλλά ήταν άδειο."
 "🤡 Συγχαρητήρια! Κέρδισες... απολύτως τίποτα."
-"🐌 Ο courier έχασε το role σου."
-"🪙 Έπεσε το νόμισμα... και έχασες."
-"👻 Το role εξαφανίστηκε πριν το πάρεις."
+"🐌 Ο courier έχασε το Daily Role σου."
+"🪙 Το νόμισμα έπεσε... αλλά έχασες."
+"👻 Το Daily Role εξαφανίστηκε πριν φτάσει σε εσένα."
 "💣 Έπεσες σε Trap Card!"
 "🎰 Critical Miss!"
-"👑 Ο βασιλιάς κράτησε το role για τον εαυτό του."
+"👑 Ο βασιλιάς αποφάσισε να κρατήσει το Daily Role."
 "🦝 Ένα ρακούν έκλεψε το κουτί σου."
 }}
 
-{{$cooldownKey := $config.cooldownKey}}
-{{$cd := dbGet .User.ID $cooldownKey}}
-
-{{if $cd}}
-
-{{$seconds := sub $cd.ExpiresAt.Unix currentTime.Unix}}
-
-{{$hours := div $seconds 3600}}
-{{$minutes := div (mod $seconds 3600) 60}}
-{{$secs := mod $seconds 60}}
-
-
-{{/* Ελλάδα:
-☀️ Καλοκαίρι (τέλος Μαρτίου έως τέλος Οκτωβρίου)
-Καλοκαίρι: Add 10800e9 (+3)
-❄️ Χειμώνας (τέλος Οκτωβρίου έως τέλος Μαρτίου)
-Χειμώνας: Add 7200e9 (+2)
-*/}}
-
-{{$next := ($cd.ExpiresAt.Add 10800e9).Format "02/01/2006 στις 15:04:05"}}
-
-{{sendMessage nil (complexMessage
-"content" .User.Mention
-"embed" (cembed
-"title" $config.titleCooldown
-"description" (joinStr ""
-"🎁 You already had your today's **Daily Role**.\n\n"
-"**⏰ Until:**\n"
-"🕒 **" $hours "** hours\n"
-"🕑 **" (printf "%.0f" $minutes) "** minutes\n"
-"🕐 **" $secs "** seconds\n\n"
-"📅 **Ready again:**\n"
-"**" $next "**\n\n"
-"🎮 When time is up, use again the command, **!daily**."
-)
-"color" $config.cooldownColor
-"footer" (sdict
-"text" $config.footerText
-)
-)
-)}}
-
-{{else}}
-
 {{/* ======================================
-              ROLE POOLS
+        GLOBAL VARIABLES
 ====================================== */}}
+
+{{$cooldownKey := $config.cooldownKey}}
+{{$pityKey := $config.pityKey}}
+{{$streakKey := $config.streakKey}}
 
 {{$common := cslice
 1524022878738059364
@@ -145,92 +110,57 @@
 {{$legendary := cslice
 1524024171917480087
 }}
+{{/* ======================================
+              COOLDOWN CHECK
+====================================== */}}
 
+{{$cd := dbGet .User.ID $cooldownKey}}
 
-{{$pityKey := $config.pityKey}}
-{{$pityDB := dbGet .User.ID $pityKey}}
+{{if $cd}}
 
-{{$pity := 0}}
+{{$seconds := sub $cd.ExpiresAt.Unix currentTime.Unix}}
 
-{{if $pityDB}}
-{{$pity = $pityDB.Value}}
-{{end}}
+{{$hours := toInt (div $seconds 3600)}}
+{{$minutes := toInt (div (mod $seconds 3600) 60)}}
+{{$secs := toInt (mod $seconds 60)}}
 
-{{$pityBonus := div (toInt $pity) 5}}
+{{/*
+=========================================
+ΕΛΛΑΔΑ
 
-{{if gt $pityBonus $config.maxPityBonus}}
-    {{$pityBonus = $config.maxPityBonus}}
-{{end}}
+☀ Καλοκαίρι:
+Add 10800e9 (+3)
 
+❄ Χειμώνας:
+Add 7200e9 (+2)
 
-{{$weekBonus := 0}}
+Αλλάζεις μόνο την παρακάτω γραμμή.
+=========================================
+*/}}
 
-{{$weekday := currentTime.Weekday}}
-
-{{if or (eq $weekday 5) (eq $weekday 6) (eq $weekday 0)}}
-{{$weekBonus = $config.weekendBonus}}
-{{end}}
-
-{{$chance := randInt 1 (sub 101 $weekBonus)}}
-
-{{$pool := $common}}
-{{$rarity := "🟢 Common"}}
-
-{{if le $chance $config.commonChance}}
-
-{{$pool = $common}}
-{{$rarity = "🟢 Common"}}
-
-{{else if le $chance $config.rareChance}}
-
-{{$pool = $rare}}
-{{$rarity = "🔵 Rare"}}
-
-{{else if le $chance (sub $config.epicChance $pityBonus)}}
-
-{{$pool = $epic}}
-{{$rarity = "🟣 Epic"}}
-{{dbSet .User.ID $pityKey 0}}
-
-{{else}}
-
-{{$pool = $legendary}}
-{{$rarity = "🟡 Legendary"}}
-{{dbSet .User.ID $pityKey 0}}
-
-{{end}}
-
-
-{{$trollChance := randInt 1 101}}
-
-{{$oldRole := "No Daily Role"}}
-
-{{$oldRoleDB := dbGet .User.ID $config.lastRoleKey}}
-
-{{if $oldRoleDB}}
-    {{$r := getRole (toInt $oldRoleDB.Value)}}
-    {{if $r}}
-        {{$oldRole = $r.Name}}
-    {{end}}
-{{end}}
-
-{{if le $trollChance $config.trollChance}}
-
-
-
-{{dbSetExpire .User.ID $cooldownKey true $config.cooldown}}
+{{$next := ($cd.ExpiresAt.Add 10800e9).Format "02/01/2006 στις 15:04:05"}}
 
 {{sendMessage nil (complexMessage
 "content" .User.Mention
 "embed" (cembed
-"title" $config.titleTroll
+"title" $config.titleCooldown
 "description" (joinStr ""
-(index $trollMessages (randInt 0 (len $trollMessages)))
-"\n\n🎭 Your previous Daily Role σου was:\n🏅 **"
-$oldRole
-"**"
+
+"🎁 Έχεις ήδη πάρει το σημερινό σου **Daily Role**.\n\n"
+
+"⏳ **Υπολειπόμενος χρόνος:**\n"
+
+"🕒 **" $hours "** ώρες\n"
+"🕑 **" $minutes "** λεπτά\n"
+"🕐 **" $secs "** δευτερόλεπτα\n\n"
+
+"📅 **Διαθέσιμο ξανά:**\n"
+"**" $next "**\n\n"
+
+"🎮 Χρησιμοποίησε ξανά την εντολή **!daily** όταν λήξει το cooldown."
+
 )
-"color" $config.trollColor
+"color" $config.cooldownColor
 "footer" (sdict
 "text" $config.footerText
 )
@@ -239,90 +169,262 @@ $oldRole
 
 {{else}}
 
-{{$newRole := index $pool (randInt 0 (len $pool))}}
+{{/* ======================================
+        LOAD USER DATA
+====================================== */}}
 
+{{$weekBonus := 0}}
+
+{{$weekday := currentTime.Weekday}}
+
+{{if or (eq $weekday 5) (eq $weekday 6) (eq $weekday 0)}}
+    {{$weekBonus = $config.weekendBonus}}
+{{end}}
+
+{{$pity := 0}}
+
+{{$pityDB := dbGet .User.ID $pityKey}}
+
+{{if $pityDB}}
+    {{$pity = toInt $pityDB.Value}}
+{{end}}
+
+{{$pityBonus := div $pity 5}}
+
+{{if gt $pityBonus $config.maxPityBonus}}
+    {{$pityBonus = $config.maxPityBonus}}
+{{end}}
+
+{{$chance := randInt 1 (sub 101 $weekBonus)}}
+
+{{$pool := $common}}
+{{$rarity := "🟢 Common"}}
+
+{{$newRole := 0}}
+{{$oldRole := "Κανένας"}}
+
+{{$trollRoll := randInt 1 101}}
+{{/* ======================================
+            RARITY ROLL
+====================================== */}}
+
+{{if le $trollRoll $config.trollChance}}
+
+    {{$rarity = "💀 Troll"}}
+
+{{else}}
+
+    {{if le $chance $config.commonChance}}
+
+        {{$pool = $common}}
+        {{$rarity = "🟢 Common"}}
+
+    {{else if le $chance $config.rareChance}}
+
+        {{$pool = $rare}}
+        {{$rarity = "🔵 Rare"}}
+
+    {{else if le $chance (sub $config.epicChance $pityBonus)}}
+
+        {{$pool = $epic}}
+        {{$rarity = "🟣 Epic"}}
+
+        {{dbSet .User.ID $pityKey 0}}
+
+    {{else}}
+
+        {{$pool = $legendary}}
+        {{$rarity = "🟡 Legendary"}}
+
+        {{dbSet .User.ID $pityKey 0}}
+
+    {{end}}
+
+    {{$newRole = index $pool (randInt 0 (len $pool))}}
+
+{{end}}
+
+{{/* ======================================
+      FIND PREVIOUS DAILY ROLE
+====================================== */}}
 
 {{range $common}}
-{{if hasRoleID .}}
-{{removeRoleID .}}
-{{end}}
+    {{if hasRoleID .}}
+        {{$oldRole = (getRole .).Name}}
+    {{end}}
 {{end}}
 
 {{range $rare}}
-{{if hasRoleID .}}
-{{removeRoleID .}}
-{{end}}
+    {{if hasRoleID .}}
+        {{$oldRole = (getRole .).Name}}
+    {{end}}
 {{end}}
 
 {{range $epic}}
-{{if hasRoleID .}}
-{{removeRoleID .}}
-{{end}}
+    {{if hasRoleID .}}
+        {{$oldRole = (getRole .).Name}}
+    {{end}}
 {{end}}
 
 {{range $legendary}}
-{{if hasRoleID .}}
-{{removeRoleID .}}
+    {{if hasRoleID .}}
+        {{$oldRole = (getRole .).Name}}
+    {{end}}
 {{end}}
+{{/* ======================================
+              TROLL EVENT
+====================================== */}}
+
+{{if eq $rarity "💀 Troll"}}
+
+    {{/* Remove previous Daily Role */}}
+
+    {{range $common}}
+        {{if hasRoleID .}}
+            {{removeRoleID .}}
+        {{end}}
+    {{end}}
+
+    {{range $rare}}
+        {{if hasRoleID .}}
+            {{removeRoleID .}}
+        {{end}}
+    {{end}}
+
+    {{range $epic}}
+        {{if hasRoleID .}}
+            {{removeRoleID .}}
+        {{end}}
+    {{end}}
+
+    {{range $legendary}}
+        {{if hasRoleID .}}
+            {{removeRoleID .}}
+        {{end}}
+    {{end}}
+
+    {{dbSetExpire .User.ID $cooldownKey true $config.cooldown}}
+
+    {{sendMessage nil (complexMessage
+        "content" .User.Mention
+        "embed" (cembed
+            "title" $config.titleTroll
+            "description" (joinStr ""
+
+                (index $trollMessages (randInt 0 (len $trollMessages)))
+"\n\n🏅 Lost Daily Role:\n**"
+$oldRole
+"**"
+"\n\n💀 Better luck next time!"
+            )
+            "color" $config.trollColor
+            "footer" (sdict
+                "text" $config.footerText
+            )
+        )
+    )}}
+
+{{else}}
+{{/* ======================================
+        REMOVE OLD DAILY ROLE
+====================================== */}}
+
+{{range $common}}
+    {{if hasRoleID .}}
+        {{removeRoleID .}}
+    {{end}}
 {{end}}
 
+{{range $rare}}
+    {{if hasRoleID .}}
+        {{removeRoleID .}}
+    {{end}}
+{{end}}
 
-{{if ne $rarity "🟣 Epic"}}
-{{if ne $rarity "🟡 Legendary"}}
-{{dbSet .User.ID $pityKey (add $pity 1)}}
+{{range $epic}}
+    {{if hasRoleID .}}
+        {{removeRoleID .}}
+    {{end}}
 {{end}}
+
+{{range $legendary}}
+    {{if hasRoleID .}}
+        {{removeRoleID .}}
+    {{end}}
 {{end}}
+
+{{/* ======================================
+            GIVE NEW ROLE
+====================================== */}}
 
 {{addRoleID $newRole}}
 
-{{dbSet .User.ID $config.lastRoleKey $newRole}}
+{{$role := getRole $newRole}}
+{{$roleName := "Unknown"}}
 
-{{$streakKey := $config.streakKey}}
-{{$streakDB := dbGet .User.ID $streakKey}}
-
-{{$streak := 0}}
-
-{{if $streakDB}}
-{{$streak = $streakDB.Value}}
+{{if $role}}
+    {{$roleName = $role.Name}}
 {{end}}
 
-{{$streak = add $streak 1}}
+{{/* ======================================
+            UPDATE PITY
+====================================== */}}
+
+{{if and (ne $rarity "🟣 Epic") (ne $rarity "🟡 Legendary")}}
+    {{dbSet .User.ID $pityKey (add $pity 1)}}
+{{end}}
+
+{{/* ======================================
+            DAILY STREAK
+====================================== */}}
+
+{{$streak := 1}}
+
+{{$streakDB := dbGet .User.ID $streakKey}}
+
+{{if $streakDB}}
+    {{$streak = add (toInt $streakDB.Value) 1}}
+{{end}}
 
 {{dbSet .User.ID $streakKey $streak}}
 
 {{dbSetExpire .User.ID $cooldownKey true $config.cooldown}}
+{{/* ======================================
+            REWARD EMBED
+====================================== */}}
 
+{{$rewardColor := $config.successColor}}
 
-{{$roleName := (getRole $newRole).Name}}
-
+{{if eq $rarity "🟡 Legendary"}}
+    {{$rewardColor = $config.legendaryColor}}
+{{end}}
 
 {{sendMessage nil (complexMessage
-"content" (joinStr ""
-.User.Mention
-)
-"embed" (cembed
-"title" $config.titleReward
-"description" (joinStr ""
-"Congrats "
-.User.Mention
-"! 🎮\n\n"
-"Today you won:\n"
-"🏅 **"
-$roleName
-"**\n\n"
-"Rarity: "
+    "content" .User.Mention
+    "embed" (cembed
+        "title" $config.titleReward
+        "description" (joinStr ""
+
+"🎉 Συγχαρητήρια!\n\n"
+
+"🏅 Κέρδισες:\n"
+"**" $roleName "**\n\n"
+
+"🎲 Σπανιότητα:\n"
 $rarity
+
 "\n\n🔥 Daily Streak: **"
 $streak
-" days**"
-"\n\n"
-"⏰ Try again tomorrow!"
-)
-"color" $config.successColor
-"footer" (sdict
-"text" $config.footerText
-)
-)
+"**"
+
+"\n\n⏰ Έλα ξανά αύριο για νέο Daily!"
+
+        )
+        "color" $rewardColor
+        "footer" (sdict
+            "text" $config.footerText
+        )
+    )
 )}}
 
 {{end}}
